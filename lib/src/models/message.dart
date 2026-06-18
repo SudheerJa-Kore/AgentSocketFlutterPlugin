@@ -1,4 +1,4 @@
-/// Message model for ABL Platform
+/// Message model for Artemis
 ///
 /// Represents a message in a chat conversation with the AI agent.
 library;

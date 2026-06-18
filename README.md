@@ -1,6 +1,6 @@
-# ABL Platform Flutter SDK
+# Artemis Flutter SDK
 
-A production-ready Flutter plugin for integrating ABL Platform's AI agent capabilities into iOS and Android applications.
+A production-ready Flutter plugin for integrating Artemis's AI agent capabilities into iOS and Android applications.
 
 ## Features
 
@@ -55,7 +55,7 @@ flutter:
 ### 3. Initialize SDK
 
 ```dart
-import 'package:artemis_flutter_socket_sdk/abl_flutter_sdk.dart';
+import 'package:artemis_flutter_socket_sdk/artemis_flutter_socket_sdk.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -261,7 +261,7 @@ The SDK follows a three-layer architecture:
 └──────────────┬──────────────────────┘
                │
     ┌──────────┴──────────┐
-    │   ABL Flutter SDK    │
+    │ Artemis Flutter SDK  │
     │                      │
     │  Configuration Layer │
     │  ├─ sdk_configuration.dart
@@ -387,4 +387,4 @@ Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for de
 
 ## Acknowledgments
 
-Built for the ABL Platform by [Your Team]
+Built for the Artemis by [Your Team]

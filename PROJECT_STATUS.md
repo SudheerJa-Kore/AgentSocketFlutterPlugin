@@ -1,4 +1,4 @@
-# ABL Platform Flutter SDK - Project Status
+# Artemis Flutter SDK - Project Status
 
 **Date**: June 17, 2026  
 **Version**: 0.0.1  
@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-The ABL Platform Flutter SDK has been successfully built based on the comprehensive specification documents (FLUTTER_SDK_SPECIFICATION.md, FLUTTER_SDK_CONFIGURATION_GUIDE.md, FLUTTER_SDK_README.md). The SDK provides a production-ready foundation for integrating AI agent capabilities into iOS and Android applications with a configuration-first architecture.
+The Artemis Flutter SDK has been successfully built based on the comprehensive specification documents (FLUTTER_SDK_SPECIFICATION.md, FLUTTER_SDK_CONFIGURATION_GUIDE.md, FLUTTER_SDK_README.md). The SDK provides a production-ready foundation for integrating AI agent capabilities into iOS and Android applications with a configuration-first architecture.
 
 ---
 
@@ -125,7 +125,7 @@ The ABL Platform Flutter SDK has been successfully built based on the comprehens
 └──────────────────────────────┼───────────────────────────────┘
                                │
                 ┌──────────────▼──────────────┐
-                │   ABL Flutter SDK           │
+                │   Artemis Flutter SDK       │
                 │                             │
                 │  ┌───────────────────────┐  │
                 │  │ Configuration Loader  │  │
@@ -391,7 +391,7 @@ SDKConfiguration get config;
 ```
 artemis_flutter_socket_sdk/
 ├── lib/
-│   ├── abl_flutter_sdk.dart              # Public API
+│   ├── artemis_flutter_socket_sdk.dart  # Public API
 │   └── src/
 │       ├── agent_sdk.dart                # Main SDK
 │       ├── config/
@@ -430,7 +430,7 @@ artemis_flutter_socket_sdk/
 ### Immediate Next Steps
 
 1. **Test with Real Endpoints**
-   - Update configuration with real ABL Platform credentials
+   - Update configuration with real Artemis credentials
    - Test connection to actual runtime
    - Verify message send/receive
 
@@ -496,7 +496,7 @@ artemis_flutter_socket_sdk/
 ### Ready For ✅
 
 - ✅ Integration into host applications
-- ✅ Testing with real ABL Platform
+- ✅ Testing with real Artemis
 - ✅ Extension with additional features
 - ✅ Distribution via pub.dev
 - ✅ Production deployment
@@ -542,7 +542,7 @@ artemis_flutter_socket_sdk/
 ### Local Resources
 - Example app: `cd example && flutter run`
 - Configuration example: `example/assets/sdk_configurations.yaml`
-- API exports: `lib/abl_flutter_sdk.dart`
+- API exports: `lib/artemis_flutter_socket_sdk.dart`
 
 ### Specification Documents
 - FLUTTER_SDK_SPECIFICATION.md (3,500+ lines)
@@ -568,7 +568,7 @@ flutter test             # Run example tests
 
 **Status**: ✅ **Foundation Complete and Working**
 
-The ABL Platform Flutter SDK has been successfully built with:
+The Artemis Flutter SDK has been successfully built with:
 
 1. ✅ **Configuration-first architecture** - All behavior from YAML
 2. ✅ **Type-safe API** - Strongly typed models and events
@@ -578,7 +578,7 @@ The ABL Platform Flutter SDK has been successfully built with:
 6. ✅ **Production structure** - Following specification patterns
 
 **The SDK is ready for:**
-- ✅ Integration testing with real ABL Platform
+- ✅ Integration testing with real Artemis
 - ✅ Extension with additional features
 - ✅ Use in production applications
 - ✅ Distribution to development teams

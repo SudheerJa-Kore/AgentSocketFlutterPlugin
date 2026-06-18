@@ -265,7 +265,7 @@ class TokenManager {
       }
     }
 
-    ABLLogger.debug('SDK token acquired', {
+    ArtemisLogger.debug('SDK token acquired', {
       'project_id': nextScope.projectId,
       'channel_id': nextScope.channelId,
     });

@@ -1,4 +1,4 @@
-# ABL Platform Flutter SDK - Quick Reference
+# Artemis Flutter SDK - Quick Reference
 
 ## Installation
 
@@ -306,7 +306,7 @@ debug:
 
 ### Import error
 ```dart
-import 'package:artemis_flutter_socket_sdk/abl_flutter_sdk.dart';
+import 'package:artemis_flutter_socket_sdk/artemis_flutter_socket_sdk.dart';
 ```
 
 ## CLI Commands

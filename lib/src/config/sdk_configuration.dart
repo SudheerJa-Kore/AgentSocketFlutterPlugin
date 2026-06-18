@@ -1,6 +1,6 @@
 /// SDK Configuration Models
 ///
-/// Complete configuration model for ABL Platform Flutter SDK.
+/// Complete configuration model for Artemis Flutter SDK.
 /// Configuration is loaded from host application's assets/sdk_configurations.yaml
 library;
 

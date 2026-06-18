@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:artemis_flutter_socket_sdk/abl_flutter_sdk.dart';
+import 'package:artemis_flutter_socket_sdk/artemis_flutter_socket_sdk.dart';
 
 import 'widgets/markdown_message.dart';
 
@@ -8,7 +8,7 @@ enum ConnectionStatus { notConnected, connecting, connected }
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize ABL SDK with configuration from assets
+  // Initialize Artemis SDK with configuration from assets
   final sdk = await AgentSDK.initialize();
 
   runApp(MyApp(sdk: sdk));
@@ -22,7 +22,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'ABL Platform SDK Demo',
+      title: 'Artemis SDK Demo',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
           seedColor: _hexToColor(sdk.config.theme.primaryColor),
@@ -175,7 +175,7 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('ABL Platform SDK Demo'),
+        title: const Text('Artemis SDK Demo'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
           IconButton(

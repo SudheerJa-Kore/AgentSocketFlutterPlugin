@@ -65,7 +65,7 @@ class ChatClient {
       ),
     );
 
-    ABLLogger.debug('Sent chat message', {
+    ArtemisLogger.debug('Sent chat message', {
       'id': messageId,
       'content': text,
     });

@@ -109,7 +109,7 @@ class SessionManager {
       send(EndSessionTransport(sessionId: _sessionId));
       _armEndSessionCloseFallback();
     } catch (error, stackTrace) {
-      ABLLogger.error('Failed to send end_session frame; disconnecting', error, stackTrace);
+      ArtemisLogger.error('Failed to send end_session frame; disconnecting', error, stackTrace);
       disconnect();
     }
   }
@@ -121,7 +121,7 @@ class SessionManager {
 
     final payload = jsonEncode(message.toJson());
     if (_config.debug.logWebsocketMessages) {
-      ABLLogger.debug('WebSocket send', payload);
+      ArtemisLogger.debug('WebSocket send', payload);
     }
     _channel!.sink.add(payload);
   }
@@ -159,7 +159,7 @@ class SessionManager {
     _resetSessionState();
     _armPendingConnect();
 
-    ABLLogger.info('Connecting WebSocket', {'url': wsUrl});
+    ArtemisLogger.info('Connecting WebSocket', {'url': wsUrl});
 
     try {
       _channel = WebSocketChannel.connect(
@@ -170,7 +170,7 @@ class SessionManager {
       _subscription = _channel!.stream.listen(
         _handleSocketData,
         onError: (Object error) {
-          ABLLogger.error('WebSocket error', error);
+          ArtemisLogger.error('WebSocket error', error);
           _errorController.add(error);
           _rejectPendingConnect(
             error is Exception ? error : Exception(error.toString()),
@@ -185,7 +185,7 @@ class SessionManager {
         cancelOnError: false,
       );
     } catch (error, stackTrace) {
-      ABLLogger.error('Failed to open WebSocket', error, stackTrace);
+      ArtemisLogger.error('Failed to open WebSocket', error, stackTrace);
       _rejectPendingConnect(
         error is Exception ? error : Exception(error.toString()),
       );
@@ -209,7 +209,7 @@ class SessionManager {
 
       if (!response.statusCode.toString().startsWith('2')) {
         if (_shouldUseLegacyWebSocketAuth(response.statusCode)) {
-          ABLLogger.warning(
+          ArtemisLogger.warning(
             'WebSocket ticket endpoint unavailable; using deprecated session-token auth',
           );
           return buildSdkWSProtocols(authToken);
@@ -231,7 +231,7 @@ class SessionManager {
 
       return buildSdkWSTicketProtocols(ticket);
     } catch (error, stackTrace) {
-      ABLLogger.error('WebSocket ticket request failed', error, stackTrace);
+      ArtemisLogger.error('WebSocket ticket request failed', error, stackTrace);
       rethrow;
     }
   }
@@ -244,13 +244,13 @@ class SessionManager {
     try {
       final decoded = jsonDecode(data as String) as Map<String, dynamic>;
       if (_config.debug.logWebsocketMessages) {
-        ABLLogger.debug('WebSocket receive', decoded);
+        ArtemisLogger.debug('WebSocket receive', decoded);
       }
 
       final message = TransportServerMessage.fromJson(decoded);
       _handleMessage(message);
     } catch (error, stackTrace) {
-      ABLLogger.error('Failed to parse WebSocket message', error, stackTrace);
+      ArtemisLogger.error('Failed to parse WebSocket message', error, stackTrace);
     }
   }
 
@@ -267,10 +267,10 @@ class SessionManager {
         _connectedController.add(null);
         _resolvePendingConnect();
         _setConnectionState(ConnectionState.connected);
-        ABLLogger.info('Connected', {'session_id': _sessionId});
+        ArtemisLogger.info('Connected', {'session_id': _sessionId});
       }
 
-      ABLLogger.info('Session started', {'session_id': _sessionId});
+      ArtemisLogger.info('Session started', {'session_id': _sessionId});
     }
 
     _messageController.add(message);
@@ -290,7 +290,7 @@ class SessionManager {
     _rejectPendingConnect(StateError('WebSocket closed before session_start'));
     _disconnectedController.add(closeReason);
     _setConnectionState(ConnectionState.disconnected);
-    ABLLogger.info('Disconnected', {
+    ArtemisLogger.info('Disconnected', {
       'code': closeCode,
       'reason': closeReason,
     });
@@ -307,7 +307,7 @@ class SessionManager {
     }
 
     if (_reconnectAttempts >= reconnection.maxAttempts) {
-      ABLLogger.warning('Max reconnect attempts reached');
+      ArtemisLogger.warning('Max reconnect attempts reached');
       return;
     }
 
@@ -315,7 +315,7 @@ class SessionManager {
     _reconnectAttempts++;
     _setConnectionState(ConnectionState.reconnecting);
 
-    ABLLogger.info('Reconnecting', {
+    ArtemisLogger.info('Reconnecting', {
       'delay_ms': delayMs,
       'attempt': _reconnectAttempts,
       'max_attempts': reconnection.maxAttempts,
@@ -324,7 +324,7 @@ class SessionManager {
     _reconnectTimer?.cancel();
     _reconnectTimer = Timer(Duration(milliseconds: delayMs), () {
       connect().catchError((Object error, StackTrace stackTrace) {
-        ABLLogger.error('Reconnect failed', error, stackTrace);
+        ArtemisLogger.error('Reconnect failed', error, stackTrace);
         _errorController.add(error);
       });
     });

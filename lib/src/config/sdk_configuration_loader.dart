@@ -4,7 +4,7 @@ import 'package:yaml/yaml.dart';
 import 'sdk_configuration.dart';
 import '../utils/logger.dart';
 
-/// Configuration loader for ABL SDK
+/// Configuration loader for Artemis SDK
 ///
 /// Loads configuration from host application's assets folder:
 /// - assets/sdk_configurations.yaml (base config)
@@ -38,10 +38,10 @@ class SDKConfigurationLoader {
 
       try {
         envConfig = await _loadConfigFile(envConfigPath);
-        ABLLogger.debug('Loaded environment-specific config for $env');
+        ArtemisLogger.debug('Loaded environment-specific config for $env');
       } catch (e) {
         // Environment config is optional
-        ABLLogger.debug('No environment-specific config found for $env');
+        ArtemisLogger.debug('No environment-specific config found for $env');
       }
 
       // Merge configurations (env overrides base)
@@ -60,7 +60,7 @@ class SDKConfigurationLoader {
       // Validate required fields
       _validateConfiguration(config);
 
-      ABLLogger.info('SDK configuration loaded successfully', {
+      ArtemisLogger.info('SDK configuration loaded successfully', {
         'environment': config.environment,
         'endpoint': config.connection.endpoint,
       });
@@ -70,7 +70,7 @@ class SDKConfigurationLoader {
       if (e is SDKConfigurationException) {
         rethrow;
       }
-      ABLLogger.error('Failed to load SDK configuration', e, st);
+      ArtemisLogger.error('Failed to load SDK configuration', e, st);
       throw SDKConfigurationException(
         'Failed to load SDK configuration: ${e.toString()}',
       );
@@ -182,12 +182,12 @@ class SDKConfigurationLoader {
     // Validate security settings in production
     if (config.environment == 'prod') {
       if (!config.security.enforceTls) {
-        ABLLogger.warning(
+        ArtemisLogger.warning(
           'TLS enforcement is disabled in production environment',
         );
       }
       if (!config.security.validateCertificates) {
-        ABLLogger.warning(
+        ArtemisLogger.warning(
           'Certificate validation is disabled in production environment',
         );
       }
@@ -214,7 +214,7 @@ class SDKConfigurationLoader {
     }
 
     if (config.chat.allowedFileTypes.isEmpty) {
-      ABLLogger.warning('chat.allowed_file_types is empty');
+      ArtemisLogger.warning('chat.allowed_file_types is empty');
     }
 
     // Validate reconnection configuration

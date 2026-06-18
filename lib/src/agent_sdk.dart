@@ -11,7 +11,7 @@ import 'models/message.dart';
 import 'transport/transport_types.dart';
 import 'utils/logger.dart';
 
-/// Main ABL Platform Flutter SDK entry point
+/// Main Artemis Flutter SDK entry point
 ///
 /// The SDK loads configuration from the host app's assets/sdk_configurations.yaml file.
 /// All behavior is controlled by this configuration.
@@ -66,12 +66,12 @@ class AgentSDK {
 
       sdk._initializeClients();
 
-      ABLLogger.configure(
+      ArtemisLogger.configure(
         enabled: sdk._config!.debug.enabled,
         logLevel: sdk._config!.debug.logLevel,
       );
 
-      ABLLogger.info('AgentSDK initialized successfully', {
+      ArtemisLogger.info('AgentSDK initialized successfully', {
         'environment': sdk._config!.environment,
         'endpoint': sdk._config!.connection.endpoint,
         'project_id': sdk._config!.connection.projectId,
@@ -80,7 +80,7 @@ class AgentSDK {
 
       return sdk;
     } catch (e, st) {
-      ABLLogger.error('Failed to initialize AgentSDK', e, st);
+      ArtemisLogger.error('Failed to initialize AgentSDK', e, st);
       rethrow;
     }
   }
@@ -91,7 +91,7 @@ class AgentSDK {
     sdk._config = config;
     sdk._initializeClients();
 
-    ABLLogger.configure(
+    ArtemisLogger.configure(
       enabled: config.debug.enabled,
       logLevel: config.debug.logLevel,
     );
@@ -149,14 +149,14 @@ class AgentSDK {
     return _config!;
   }
 
-  /// Connect to the ABL Platform
+  /// Connect to the Artemis
   ///
   /// Returns session ID
   Future<String> connect() async {
     _ensureInitialized();
 
     try {
-      ABLLogger.info('Connecting to ABL Platform...', {
+      ArtemisLogger.info('Connecting to Artemis...', {
         'endpoint': _config!.connection.endpoint,
       });
 
@@ -167,13 +167,13 @@ class AgentSDK {
         throw StateError('Connected but session ID was not returned');
       }
 
-      ABLLogger.info('Connected successfully', {
+      ArtemisLogger.info('Connected successfully', {
         'session_id': sessionId,
       });
 
       return sessionId;
     } catch (e, st) {
-      ABLLogger.error('Connection failed', e, st);
+      ArtemisLogger.error('Connection failed', e, st);
       _eventController.add(SDKErrorEvent(e, st));
       rethrow;
     }
@@ -182,7 +182,7 @@ class AgentSDK {
   /// Disconnect from platform
   void disconnect() {
     if (_sessionManager == null) return;
-    ABLLogger.info('Disconnecting from platform');
+    ArtemisLogger.info('Disconnecting from platform');
     _sessionManager!.disconnect();
   }
 
@@ -227,7 +227,7 @@ class AgentSDK {
   /// Clear message history
   void clearHistory() {
     _chatClient?.clearMessages();
-    ABLLogger.debug('Message history cleared');
+    ArtemisLogger.debug('Message history cleared');
   }
 
   /// SDK event stream
@@ -248,7 +248,7 @@ class AgentSDK {
     await _sessionManager?.dispose();
     await _eventController.close();
     await _chatEventController.close();
-    ABLLogger.info('AgentSDK disposed');
+    ArtemisLogger.info('AgentSDK disposed');
   }
 
   void _ensureInitialized() {

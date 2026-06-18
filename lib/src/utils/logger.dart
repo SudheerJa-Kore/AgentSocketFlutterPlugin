@@ -1,10 +1,10 @@
 import 'dart:developer' as developer;
 
-/// Logger utility for ABL SDK
+/// Logger utility for Artemis SDK
 ///
 /// Provides structured logging with different levels.
 /// Log level is controlled by SDK configuration.
-class ABLLogger {
+class ArtemisLogger {
   static String _logLevel = 'info';
   static bool _enabled = false;
 
@@ -45,7 +45,7 @@ class ABLLogger {
       if (stackTrace != null) {
         developer.log(
           stackTrace.toString(),
-          name: 'ABL_SDK',
+          name: 'ARTEMIS_SDK',
           level: 1000,
         );
       }
@@ -71,14 +71,14 @@ class ABLLogger {
 
     developer.log(
       logMessage,
-      name: 'ABL_SDK',
+      name: 'ARTEMIS_SDK',
       error: data,
     );
 
     // Also print to console in debug mode
     if (_logLevel == 'debug') {
       // ignore: avoid_print
-      print('🔷 ABL_SDK $logMessage');
+      print('🔷 ARTEMIS_SDK $logMessage');
       if (data != null) {
         // ignore: avoid_print
         print('   Data: $data');
