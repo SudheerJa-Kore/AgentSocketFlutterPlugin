@@ -32,6 +32,9 @@ migrate_working_dir/
 /build/
 /coverage/
 
+# Web SDK reference (not part of this repo)
+web-sdk/
+
 # Internal documentation (not for public/shared repo)
 CLAUDE.md
 COMMANDS.md

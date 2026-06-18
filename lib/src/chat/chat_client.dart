@@ -1,4 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
+
+import 'package:http/http.dart' as http;
 
 import '../config/sdk_configuration.dart';
 import '../events/chat_events.dart';
@@ -20,6 +23,10 @@ class ChatClient {
   StreamSubscription<TransportServerMessage>? _messageSubscription;
   bool _isTyping = false;
   final Map<String, StringBuffer> _streamingBuffers = {};
+
+  Future<void>? _historyHydrationFuture;
+  String? _historyHydrationSessionId;
+  int _historyHydrationGeneration = 0;
 
   ChatClient({
     required SessionManager sessionManager,
@@ -75,13 +82,78 @@ class ChatClient {
 
   List<Message> getMessages() => List.unmodifiable(_messages);
 
+  /// Fetch persisted chat history for the active session and merge it into the
+  /// local message store.
+  ///
+  /// This is invoked automatically on every (re)connect, mirroring the web SDK.
+  /// Concurrent calls for the same session are de-duplicated. Failures are
+  /// swallowed (logged at debug level) so a missing history endpoint never
+  /// breaks an otherwise healthy live session.
+  Future<void> hydratePersistedHistory() {
+    final sessionId = _resolveHistorySessionId();
+    if (sessionId == null || sessionId.isEmpty) {
+      ArtemisLogger.debug(
+        'Persisted history hydration skipped: no active session',
+      );
+      return Future<void>.value();
+    }
+
+    final inflight = _historyHydrationFuture;
+    if (inflight != null && _historyHydrationSessionId == sessionId) {
+      ArtemisLogger.debug('Persisted history hydration already in progress', {
+        'session_id': sessionId,
+      });
+      return inflight;
+    }
+
+    ArtemisLogger.info('Hydrating persisted history', {
+      'session_id': sessionId,
+    });
+
+    final generation = _historyHydrationGeneration;
+    _historyHydrationSessionId = sessionId;
+    final future = _fetchPersistedHistory(sessionId).then((messages) {
+      if (generation != _historyHydrationGeneration ||
+          sessionId != _resolveHistorySessionId()) {
+        ArtemisLogger.debug('Persisted history hydration result discarded', {
+          'session_id': sessionId,
+        });
+        return;
+      }
+      ArtemisLogger.info('Persisted history fetched', {
+        'session_id': sessionId,
+        'fetched': messages.length,
+      });
+      _mergeHydratedMessages(messages);
+    }).catchError((Object error) {
+      ArtemisLogger.warning('Persisted history hydration skipped', {
+        'session_id': sessionId,
+        'error': error.toString(),
+      });
+    }).whenComplete(() {
+      if (generation == _historyHydrationGeneration) {
+        _historyHydrationFuture = null;
+        _historyHydrationSessionId = null;
+      }
+    });
+
+    _historyHydrationFuture = future;
+    return future;
+  }
+
   void clearMessages() {
+    _historyHydrationGeneration++;
+    _historyHydrationFuture = null;
+    _historyHydrationSessionId = null;
     _messages.clear();
     _messageIds.clear();
     _streamingBuffers.clear();
   }
 
   Future<void> dispose() async {
+    _historyHydrationGeneration++;
+    _historyHydrationFuture = null;
+    _historyHydrationSessionId = null;
     await _messageSubscription?.cancel();
     await _eventController.close();
     _messages.clear();
@@ -238,4 +310,199 @@ class ChatClient {
   String _generateId() {
     return 'msg_${DateTime.now().microsecondsSinceEpoch}';
   }
+
+  String? _resolveHistorySessionId() => _sessionManager.getSessionId();
+
+  Uri _buildHistoryUri(
+    String sessionId, {
+    String? cursor,
+    required int limit,
+  }) {
+    final base = Uri.parse(_sessionManager.getEndpoint());
+    final projectId = _sessionManager.getProjectId();
+    return base.replace(
+      path: '/api/projects/${Uri.encodeComponent(projectId)}'
+          '/sessions/${Uri.encodeComponent(sessionId)}/messages',
+      queryParameters: {
+        'direction': 'asc',
+        'limit': '$limit',
+        if (cursor != null && cursor.isNotEmpty) 'cursor': cursor,
+      },
+    );
+  }
+
+  Future<List<Message>> _fetchPersistedHistory(String sessionId) async {
+    final authToken = await _sessionManager.getAuthToken();
+    final perPage = _config.chat.historyPageSize;
+    final maxPages = _config.chat.maxHistoryPages;
+    final hydrated = <Message>[];
+    String? cursor;
+
+    for (var page = 0; page < maxPages; page++) {
+      final uri = _buildHistoryUri(sessionId, cursor: cursor, limit: perPage);
+      ArtemisLogger.debug('Fetching history page', {
+        'page': page,
+        'url': uri.toString(),
+      });
+
+      final response = await http.get(
+        uri,
+        headers: {'X-SDK-Token': authToken},
+      );
+
+      ArtemisLogger.debug('History page response', {
+        'page': page,
+        'status': response.statusCode,
+      });
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw StateError('History request failed: ${response.statusCode}');
+      }
+
+      final parsed = _parsePersistedHistoryPage(jsonDecode(response.body));
+      hydrated.addAll(parsed.messages);
+
+      if (!parsed.hasMore || parsed.nextCursor == null) {
+        break;
+      }
+      cursor = parsed.nextCursor;
+    }
+
+    return hydrated;
+  }
+
+  _PersistedHistoryPage _parsePersistedHistoryPage(dynamic body) {
+    if (body is! Map<String, dynamic> || body['messages'] is! List) {
+      return const _PersistedHistoryPage(
+        messages: [],
+        nextCursor: null,
+        hasMore: false,
+      );
+    }
+
+    final messages = <Message>[];
+    for (final raw in body['messages'] as List) {
+      final parsed = _parsePersistedHistoryMessage(raw);
+      if (parsed != null) {
+        messages.add(parsed);
+      }
+    }
+
+    return _PersistedHistoryPage(
+      messages: messages,
+      nextCursor: body['nextCursor'] is String ? body['nextCursor'] as String : null,
+      hasMore: body['hasMore'] == true,
+    );
+  }
+
+  Message? _parsePersistedHistoryMessage(dynamic raw) {
+    if (raw is! Map<String, dynamic>) {
+      return null;
+    }
+
+    final id = raw['id'];
+    final role = raw['role'];
+    if (id is! String || role is! String) {
+      return null;
+    }
+
+    final envelope = raw['contentEnvelope'];
+    final envelopeText =
+        envelope is Map<String, dynamic> ? envelope['text'] as String? : null;
+    final rawContent = raw['content'];
+    final content = (rawContent is String && rawContent.trim().isNotEmpty)
+        ? rawContent
+        : (envelopeText ?? '');
+
+    final rawTimestamp = raw['timestamp'];
+    final timestamp = rawTimestamp is String
+        ? (DateTime.tryParse(rawTimestamp) ?? DateTime.now())
+        : DateTime.now();
+
+    return Message(
+      id: id,
+      role: _roleFromString(role),
+      content: content,
+      timestamp: timestamp,
+      metadata: raw['metadata'] is Map<String, dynamic>
+          ? Map<String, dynamic>.from(raw['metadata'] as Map)
+          : null,
+    );
+  }
+
+  void _mergeHydratedMessages(List<Message> messages) {
+    if (messages.isEmpty) {
+      return;
+    }
+
+    final existingIds = _messages.map((message) => message.id).toSet();
+    final existingFingerprints = _messages.map(_fingerprint).toSet();
+    final newMessages = <Message>[];
+
+    for (final message in messages) {
+      if (existingIds.contains(message.id)) {
+        continue;
+      }
+      final fingerprint = _fingerprint(message);
+      if (existingFingerprints.contains(fingerprint)) {
+        continue;
+      }
+      existingIds.add(message.id);
+      existingFingerprints.add(fingerprint);
+      newMessages.add(message);
+    }
+
+    if (newMessages.isEmpty) {
+      ArtemisLogger.debug('Persisted history merge: no new messages');
+      return;
+    }
+
+    ArtemisLogger.info('Merging persisted history', {
+      'new_messages': newMessages.length,
+    });
+
+    _messages.addAll(newMessages);
+    _messages.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+
+    final maxMessages = _config.chat.maxMessagesLocal;
+    if (_messages.length > maxMessages) {
+      _messages.removeRange(0, _messages.length - maxMessages);
+    }
+
+    _messageIds
+      ..clear()
+      ..addAll(_messages.map((message) => message.id));
+
+    _eventController.add(HistoryLoadedEvent(getMessages()));
+  }
+
+  String _fingerprint(Message message) =>
+      '${message.role}|${message.content}|${message.timestamp.toIso8601String()}';
+
+  MessageRole _roleFromString(String role) {
+    switch (role.toLowerCase()) {
+      case 'user':
+        return MessageRole.user;
+      case 'assistant':
+        return MessageRole.assistant;
+      case 'system':
+        return MessageRole.system;
+      case 'thought':
+        return MessageRole.thought;
+      default:
+        return MessageRole.assistant;
+    }
+  }
+}
+
+class _PersistedHistoryPage {
+  final List<Message> messages;
+  final String? nextCursor;
+  final bool hasMore;
+
+  const _PersistedHistoryPage({
+    required this.messages,
+    required this.nextCursor,
+    required this.hasMore,
+  });
 }

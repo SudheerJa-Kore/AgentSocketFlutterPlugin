@@ -13,6 +13,18 @@ class MessageReceivedEvent extends ChatEvent {
   String toString() => 'MessageReceivedEvent(message: ${message.id})';
 }
 
+/// Emitted after persisted history is fetched and merged into the local store.
+///
+/// Carries the full, ordered message list so UIs can refresh in one pass.
+class HistoryLoadedEvent extends ChatEvent {
+  final List<Message> messages;
+
+  HistoryLoadedEvent(this.messages);
+
+  @override
+  String toString() => 'HistoryLoadedEvent(count: ${messages.length})';
+}
+
 class MessageStartEvent extends ChatEvent {
   final String messageId;
 

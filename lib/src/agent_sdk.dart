@@ -116,6 +116,8 @@ class AgentSDK {
       if (sessionId != null) {
         _eventController.add(SDKConnectedEvent(sessionId));
       }
+      // Hydrate persisted history first thing on every (re)connect.
+      unawaited(_chatClient!.hydratePersistedHistory());
     });
 
     _disconnectedSubscription = _sessionManager!.disconnected.listen((reason) {
