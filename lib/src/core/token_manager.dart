@@ -3,8 +3,11 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../config/sdk_configuration.dart';
+import '../events/sdk_events.dart';
+import '../models/widget_config.dart';
 import '../utils/logger.dart';
 import 'endpoint.dart';
+import 'sdk_error.dart';
 import 'sdk_session_scope.dart';
 
 const _refreshLeewayMs = 60 * 1000;
@@ -36,6 +39,7 @@ class TokenManager {
   String? _token;
   int? _expiresAtMs;
   SDKSessionScope? _scope;
+  WidgetConfig? _widgetConfig;
   Future<String>? _inflight;
 
   TokenManager(this._config) : _httpEndpoint = normalizeHttpEndpoint(_config.connection.endpoint);
@@ -58,6 +62,10 @@ class TokenManager {
 
   SDKSessionScope? getScope() => _scope;
 
+  /// Server-provided widget configuration from the most recent init/refresh
+  /// response, or null if none was returned yet.
+  WidgetConfig? getWidgetConfig() => _widgetConfig;
+
   void invalidateToken() => _clearToken();
 
   Future<String> _refreshOrInit() async {
@@ -69,10 +77,10 @@ class TokenManager {
 
     try {
       return await _refreshToken(currentToken);
-    } catch (error) {
+    } catch (error, stackTrace) {
       if (error is TokenResponseValidationException) {
         _clearToken();
-        rethrow;
+        throw SdkStageException(SDKErrorCode.tokenRefresh, error, stackTrace);
       }
 
       if (!_isExpired() && !_isUnauthorizedError(error)) {
@@ -85,6 +93,16 @@ class TokenManager {
   }
 
   Future<String> _initToken() async {
+    try {
+      return await _initTokenImpl();
+    } on SdkStageException {
+      rethrow;
+    } catch (error, stackTrace) {
+      throw SdkStageException(SDKErrorCode.tokenInit, error, stackTrace);
+    }
+  }
+
+  Future<String> _initTokenImpl() async {
     final body = <String, dynamic>{};
     final headers = <String, String>{
       'Content-Type': 'application/json',
@@ -132,24 +150,48 @@ class TokenManager {
       headers['X-Public-Key'] = apiKey;
     }
 
+    final url = '$_httpEndpoint/api/v1/sdk/init';
+    final encodedBody = jsonEncode(body);
+    ArtemisLogger.debug('SDK init request', {
+      'method': 'POST',
+      'url': url,
+      'headers': headers,
+      'body': encodedBody,
+    });
+
     final response = await http.post(
-      Uri.parse('$_httpEndpoint/api/v1/sdk/init'),
+      Uri.parse(url),
       headers: headers,
-      body: jsonEncode(body),
+      body: encodedBody,
     );
+
+    ArtemisLogger.debug('SDK init response', {
+      'status': response.statusCode,
+      'body': response.body,
+    });
 
     return _storeResponse(response, 'SDK init failed');
   }
 
   Future<String> _refreshToken(String currentToken) async {
+    final url = '$_httpEndpoint/api/v1/sdk/refresh';
+    ArtemisLogger.debug('SDK refresh request', {
+      'method': 'POST',
+      'url': url,
+    });
+
     final response = await http.post(
-      Uri.parse('$_httpEndpoint/api/v1/sdk/refresh'),
+      Uri.parse(url),
       headers: {
         'Content-Type': 'application/json',
         'X-SDK-Token': currentToken,
       },
       body: '{}',
     );
+
+    ArtemisLogger.debug('SDK refresh response', {
+      'status': response.statusCode,
+    });
 
     return _storeResponse(response, 'SDK token refresh failed');
   }
@@ -165,6 +207,7 @@ class TokenManager {
     _token = parsed.token;
     _expiresAtMs = DateTime.now().millisecondsSinceEpoch + parsed.expiresIn * 1000;
     _scope = _resolveScope(parsed);
+    _widgetConfig = parsed.widgetConfig;
     return parsed.token;
   }
 
@@ -218,6 +261,11 @@ class TokenManager {
 
     final deploymentId = (payload['deploymentId'] as String?)?.trim();
 
+    final widgetConfigRaw = payload['widgetConfig'];
+    final widgetConfig = widgetConfigRaw is Map<String, dynamic>
+        ? WidgetConfig.fromMap(widgetConfigRaw)
+        : null;
+
     return _TokenResponse(
       token: token,
       expiresIn: expiresIn.toInt(),
@@ -227,6 +275,7 @@ class TokenManager {
       deploymentId: deploymentId?.isNotEmpty == true ? deploymentId : null,
       permissions: permissions,
       showActivityUpdates: showActivityUpdates,
+      widgetConfig: widgetConfig,
     );
   }
 
@@ -294,6 +343,7 @@ class TokenManager {
     _token = null;
     _expiresAtMs = null;
     _scope = null;
+    _widgetConfig = null;
   }
 }
 
@@ -306,6 +356,7 @@ class _TokenResponse {
   final String? deploymentId;
   final List<String> permissions;
   final bool showActivityUpdates;
+  final WidgetConfig? widgetConfig;
 
   const _TokenResponse({
     required this.token,
@@ -316,5 +367,6 @@ class _TokenResponse {
     this.deploymentId,
     required this.permissions,
     required this.showActivityUpdates,
+    this.widgetConfig,
   });
 }

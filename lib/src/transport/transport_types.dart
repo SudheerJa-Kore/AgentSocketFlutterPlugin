@@ -9,6 +9,7 @@ class ChatMessageTransport extends TransportClientMessage {
   final String? sessionId;
   final List<String>? attachmentIds;
   final Map<String, dynamic>? metadata;
+  final Map<String, dynamic>? customData;
 
   ChatMessageTransport({
     required this.text,
@@ -16,6 +17,7 @@ class ChatMessageTransport extends TransportClientMessage {
     this.sessionId,
     this.attachmentIds,
     this.metadata,
+    this.customData,
   });
 
   @override
@@ -27,6 +29,7 @@ class ChatMessageTransport extends TransportClientMessage {
       if (sessionId != null) 'sessionId': sessionId,
       if (attachmentIds != null) 'attachmentIds': attachmentIds,
       if (metadata != null) 'metadata': metadata,
+      if (customData != null && customData!.isNotEmpty) 'customData': customData,
     };
   }
 }

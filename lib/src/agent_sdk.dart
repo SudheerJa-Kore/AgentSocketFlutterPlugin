@@ -3,11 +3,13 @@ import 'dart:async';
 import 'chat/chat_client.dart';
 import 'config/sdk_configuration.dart';
 import 'config/sdk_configuration_loader.dart';
+import 'core/sdk_error.dart';
 import 'core/session_manager.dart';
 import 'core/token_manager.dart';
 import 'events/chat_events.dart';
 import 'events/sdk_events.dart';
 import 'models/message.dart';
+import 'models/widget_config.dart';
 import 'transport/transport_types.dart';
 import 'utils/logger.dart';
 
@@ -109,6 +111,15 @@ class AgentSDK {
     _chatClient = ChatClient(
       sessionManager: _sessionManager!,
       config: config,
+      onHistoryError: (error, stackTrace) {
+        _eventController.add(
+          SDKErrorEvent(
+            error,
+            stackTrace: stackTrace,
+            code: SDKErrorCode.historyFetch,
+          ),
+        );
+      },
     );
 
     _connectedSubscription = _sessionManager!.connected.listen((_) {
@@ -116,6 +127,8 @@ class AgentSDK {
       if (sessionId != null) {
         _eventController.add(SDKConnectedEvent(sessionId));
       }
+      // Retransmit any messages that were left unanswered by a prior drop.
+      _chatClient!.resendPending();
       // Hydrate persisted history first thing on every (re)connect.
       unawaited(_chatClient!.hydratePersistedHistory());
     });
@@ -125,11 +138,7 @@ class AgentSDK {
     });
 
     _errorSubscription = _sessionManager!.errors.listen((error) {
-      _eventController.add(
-        SDKErrorEvent(
-          error is Exception ? error : Exception(error.toString()),
-        ),
-      );
+      _eventController.add(_toSdkErrorEvent(error));
     });
 
     _connectionStateSubscription =
@@ -176,7 +185,7 @@ class AgentSDK {
       return sessionId;
     } catch (e, st) {
       ArtemisLogger.error('Connection failed', e, st);
-      _eventController.add(SDKErrorEvent(e, st));
+      _eventController.add(_toSdkErrorEvent(e, st));
       rethrow;
     }
   }
@@ -185,11 +194,16 @@ class AgentSDK {
   void disconnect() {
     if (_sessionManager == null) return;
     ArtemisLogger.info('Disconnecting from platform');
+    // Client-initiated teardown: drop unanswered messages so they are not
+    // replayed if the host reconnects later.
+    _chatClient?.clearPending();
     _sessionManager!.disconnect();
   }
 
   /// End the current server session and disconnect.
   void endSession() {
+    _chatClient?.clearCustomData();
+    _chatClient?.clearPending();
     _sessionManager?.endSession();
   }
 
@@ -198,6 +212,13 @@ class AgentSDK {
 
   /// Get current session ID
   String? getSessionId() => _sessionManager?.getSessionId();
+
+  /// Get the server-provided widget configuration.
+  ///
+  /// Returned by the runtime in the init/refresh response and available after
+  /// a successful [connect]. Returns null if the SDK is not connected yet or
+  /// the runtime did not provide one.
+  WidgetConfig? getWidgetConfig() => _sessionManager?.getWidgetConfig();
 
   /// Send a chat message
   ///
@@ -213,18 +234,47 @@ class AgentSDK {
     _ensureInitialized();
 
     if (!isConnected()) {
-      throw StateError('SDK not connected. Call connect() first.');
+      final error = StateError('SDK not connected. Call connect() first.');
+      _eventController.add(
+        SDKErrorEvent(error, code: SDKErrorCode.sendFailed),
+      );
+      throw error;
     }
 
-    return _chatClient!.send(
-      text,
-      metadata: metadata,
-      attachmentIds: attachmentIds,
-    );
+    try {
+      return await _chatClient!.send(
+        text,
+        metadata: metadata,
+        attachmentIds: attachmentIds,
+      );
+    } catch (e, st) {
+      _eventController.add(
+        SDKErrorEvent(e, stackTrace: st, code: SDKErrorCode.sendFailed),
+      );
+      rethrow;
+    }
   }
 
   /// Get all messages
   List<Message> getMessages() => _chatClient?.getMessages() ?? const [];
+
+  /// Update session-scoped custom data.
+  ///
+  /// The provided [customData] is merged into any existing custom data and
+  /// attached to every chat message sent afterwards, for the remainder of the
+  /// conversation. It is cleared automatically on [endSession] (or manually via
+  /// [clearCustomData]). Repeated calls accumulate; matching keys are
+  /// overridden by the latest call.
+  void updateCustomData(Map<String, dynamic> customData) {
+    _ensureInitialized();
+    _chatClient!.updateCustomData(customData);
+  }
+
+  /// Get the current session-scoped custom data.
+  Map<String, dynamic> get customData => _chatClient?.customData ?? const {};
+
+  /// Clear all session-scoped custom data.
+  void clearCustomData() => _chatClient?.clearCustomData();
 
   /// Clear message history
   void clearHistory() {
@@ -251,6 +301,22 @@ class AgentSDK {
     await _eventController.close();
     await _chatEventController.close();
     ArtemisLogger.info('AgentSDK disposed');
+  }
+
+  /// Convert an internal error into a coded [SDKErrorEvent].
+  ///
+  /// [SdkStageException]s carry their originating stage so host apps can tell
+  /// exactly where the failure happened; everything else is reported as
+  /// [SDKErrorCode.unknown].
+  SDKErrorEvent _toSdkErrorEvent(Object error, [StackTrace? stackTrace]) {
+    if (error is SdkStageException) {
+      return SDKErrorEvent(
+        error.cause,
+        stackTrace: error.stackTrace ?? stackTrace,
+        code: error.code,
+      );
+    }
+    return SDKErrorEvent(error, stackTrace: stackTrace);
   }
 
   void _ensureInitialized() {

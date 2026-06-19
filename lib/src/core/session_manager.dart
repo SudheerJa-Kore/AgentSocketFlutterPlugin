@@ -7,8 +7,11 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:web_socket_channel/status.dart' as ws_status;
 
 import '../config/sdk_configuration.dart';
+import '../events/sdk_events.dart';
+import '../models/widget_config.dart';
 import '../utils/logger.dart';
 import 'endpoint.dart';
+import 'sdk_error.dart';
 import 'sdk_session_scope.dart';
 import 'token_manager.dart';
 import 'websocket_auth.dart';
@@ -136,6 +139,8 @@ class SessionManager {
 
   SDKSessionScope? getScope() => _tokenManager.getScope();
 
+  WidgetConfig? getWidgetConfig() => _tokenManager.getWidgetConfig();
+
   Future<String> getAuthToken() => _tokenManager.getToken();
 
   String getEndpoint() => _httpEndpoint;
@@ -169,12 +174,12 @@ class SessionManager {
 
       _subscription = _channel!.stream.listen(
         _handleSocketData,
-        onError: (Object error) {
+        onError: (Object error, StackTrace stackTrace) {
           ArtemisLogger.error('WebSocket error', error);
-          _errorController.add(error);
-          _rejectPendingConnect(
-            error is Exception ? error : Exception(error.toString()),
-          );
+          final staged =
+              SdkStageException(SDKErrorCode.socketConnection, error, stackTrace);
+          _errorController.add(staged);
+          _rejectPendingConnect(staged);
           _setConnectionState(ConnectionState.error);
         },
         onDone: () {
@@ -186,11 +191,11 @@ class SessionManager {
       );
     } catch (error, stackTrace) {
       ArtemisLogger.error('Failed to open WebSocket', error, stackTrace);
-      _rejectPendingConnect(
-        error is Exception ? error : Exception(error.toString()),
-      );
+      final staged =
+          SdkStageException(SDKErrorCode.socketConnection, error, stackTrace);
+      _rejectPendingConnect(staged);
       _setConnectionState(ConnectionState.error);
-      rethrow;
+      throw staged;
     }
 
     return _pendingConnectCompleter!.future;
@@ -232,7 +237,7 @@ class SessionManager {
       return buildSdkWSTicketProtocols(ticket);
     } catch (error, stackTrace) {
       ArtemisLogger.error('WebSocket ticket request failed', error, stackTrace);
-      rethrow;
+      throw SdkStageException(SDKErrorCode.wsTicket, error, stackTrace);
     }
   }
 
@@ -345,7 +350,10 @@ class SessionManager {
     _pendingConnectTimeout = Timer(
       const Duration(milliseconds: _sessionReadyTimeoutMs),
       () {
-        final timeoutError = StateError('Timed out waiting for session_start');
+        final timeoutError = SdkStageException(
+          SDKErrorCode.sessionStartTimeout,
+          StateError('Timed out waiting for session_start'),
+        );
         _rejectPendingConnect(timeoutError);
         _closeChannel(ws_status.goingAway, 'Session start timeout');
       },

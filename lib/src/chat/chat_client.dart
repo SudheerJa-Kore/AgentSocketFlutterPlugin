@@ -28,17 +28,52 @@ class ChatClient {
   String? _historyHydrationSessionId;
   int _historyHydrationGeneration = 0;
 
+  final Map<String, dynamic> _customData = {};
+
+  /// User messages that have been sent but not yet answered by the bot.
+  ///
+  /// Kept in FIFO order. An entry is removed when its turn resolves
+  /// (`response_end` or `error`). If the socket drops mid-turn, the entries
+  /// survive and are retransmitted on the next (re)connect via [resendPending].
+  final List<_PendingMessage> _inFlight = [];
+
+  /// Invoked when persisted-history hydration fails. Lets the SDK surface a
+  /// coded error event instead of silently swallowing the failure.
+  final void Function(Object error, StackTrace? stackTrace)? _onHistoryError;
+
   ChatClient({
     required SessionManager sessionManager,
     required SDKConfiguration config,
+    void Function(Object error, StackTrace? stackTrace)? onHistoryError,
   })  : _sessionManager = sessionManager,
-        _config = config {
+        _config = config,
+        _onHistoryError = onHistoryError {
     _messageSubscription = _sessionManager.messages.listen(_handleServerMessage);
   }
 
   Stream<ChatEvent> get events => _eventController.stream;
 
   bool get isTyping => _isTyping;
+
+  /// Current session-scoped custom data attached to every outgoing message.
+  Map<String, dynamic> get customData => Map.unmodifiable(_customData);
+
+  /// Merge [data] into the session-scoped custom data.
+  ///
+  /// The merged map is attached to every chat message sent afterwards until the
+  /// conversation ends ([clearCustomData] or session end). Repeated calls
+  /// accumulate; keys present in [data] override existing keys.
+  void updateCustomData(Map<String, dynamic> data) {
+    _customData.addAll(data);
+    ArtemisLogger.debug('Custom data updated', {
+      'keys': _customData.keys.toList(),
+    });
+  }
+
+  /// Clear all session-scoped custom data.
+  void clearCustomData() {
+    _customData.clear();
+  }
 
   Future<String> send(
     String text, {
@@ -62,22 +97,65 @@ class ChatClient {
     _addMessage(userMessage);
     _eventController.add(MessageReceivedEvent(userMessage));
 
+    final pending = _PendingMessage(
+      messageId: messageId,
+      text: text,
+      attachmentIds: attachmentIds,
+      metadata: metadata,
+      customData: _customData.isNotEmpty ? Map.of(_customData) : null,
+    );
+    _inFlight.add(pending);
+    _transmit(pending);
+
+    return messageId;
+  }
+
+  /// Send (or re-send) a pending message frame over the active session.
+  void _transmit(_PendingMessage pending, {bool isResend = false}) {
     _sessionManager.send(
       ChatMessageTransport(
-        text: text,
-        messageId: messageId,
+        text: pending.text,
+        messageId: pending.messageId,
         sessionId: _sessionManager.getSessionId(),
-        attachmentIds: attachmentIds,
-        metadata: metadata,
+        attachmentIds: pending.attachmentIds,
+        metadata: pending.metadata,
+        customData: pending.customData,
       ),
     );
 
-    ArtemisLogger.debug('Sent chat message', {
-      'id': messageId,
-      'content': text,
+    ArtemisLogger.debug(isResend ? 'Resent chat message' : 'Sent chat message', {
+      'id': pending.messageId,
+      'content': pending.text,
+      'has_custom_data': pending.customData != null,
     });
+  }
 
-    return messageId;
+  /// Retransmit any user messages that were left unanswered when the socket
+  /// dropped. Called on every (re)connect; a no-op when nothing is pending.
+  ///
+  /// The original [messageId] is reused so neither the local store nor the
+  /// server creates a duplicate entry.
+  void resendPending() {
+    if (_inFlight.isEmpty || !_sessionManager.isConnected()) {
+      return;
+    }
+    ArtemisLogger.info('Resending unanswered messages after reconnect', {
+      'count': _inFlight.length,
+    });
+    for (final pending in List<_PendingMessage>.of(_inFlight)) {
+      _transmit(pending, isResend: true);
+    }
+  }
+
+  /// Drop all pending (unanswered) messages without resending. Used on
+  /// client-initiated disconnect / session end so stale messages are not
+  /// replayed on a later reconnect.
+  void clearPending() => _inFlight.clear();
+
+  void _resolveOldestInFlight() {
+    if (_inFlight.isNotEmpty) {
+      _inFlight.removeAt(0);
+    }
   }
 
   List<Message> getMessages() => List.unmodifiable(_messages);
@@ -125,11 +203,12 @@ class ChatClient {
         'fetched': messages.length,
       });
       _mergeHydratedMessages(messages);
-    }).catchError((Object error) {
+    }).catchError((Object error, StackTrace stackTrace) {
       ArtemisLogger.warning('Persisted history hydration skipped', {
         'session_id': sessionId,
         'error': error.toString(),
       });
+      _onHistoryError?.call(error, stackTrace);
     }).whenComplete(() {
       if (generation == _historyHydrationGeneration) {
         _historyHydrationFuture = null;
@@ -148,6 +227,7 @@ class ChatClient {
     _messages.clear();
     _messageIds.clear();
     _streamingBuffers.clear();
+    _inFlight.clear();
   }
 
   Future<void> dispose() async {
@@ -159,6 +239,7 @@ class ChatClient {
     _messages.clear();
     _messageIds.clear();
     _streamingBuffers.clear();
+    _inFlight.clear();
   }
 
   void _handleServerMessage(TransportServerMessage message) {
@@ -223,6 +304,8 @@ class ChatClient {
             _streamingBuffers.remove(endMessageId)?.toString() ??
             '';
 
+        _resolveOldestInFlight();
+
         if (content.trim().isEmpty) {
           _eventController.add(
             ChatErrorEvent(
@@ -262,6 +345,7 @@ class ChatClient {
         break;
 
       case 'error':
+        _resolveOldestInFlight();
         final errorContent = (message.raw['content'] as String?) ?? 'Unknown error';
         _eventController.add(ChatErrorEvent(StateError(errorContent)));
         break;
@@ -504,5 +588,23 @@ class _PersistedHistoryPage {
     required this.messages,
     required this.nextCursor,
     required this.hasMore,
+  });
+}
+
+/// A user message awaiting a bot response, retained so it can be retransmitted
+/// after an unexpected disconnect.
+class _PendingMessage {
+  final String messageId;
+  final String text;
+  final List<String>? attachmentIds;
+  final Map<String, dynamic>? metadata;
+  final Map<String, dynamic>? customData;
+
+  const _PendingMessage({
+    required this.messageId,
+    required this.text,
+    this.attachmentIds,
+    this.metadata,
+    this.customData,
   });
 }

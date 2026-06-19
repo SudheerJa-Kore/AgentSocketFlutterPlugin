@@ -1,6 +1,36 @@
 /// SDK-level events
 library;
 
+/// Identifies the exact stage/operation where an SDK error occurred.
+///
+/// Lets host apps pinpoint failures (auth bootstrap vs. socket vs. send, etc.)
+/// instead of receiving an undifferentiated error.
+enum SDKErrorCode {
+  /// Acquiring the initial SDK session token failed (`POST /api/v1/sdk/init`).
+  tokenInit,
+
+  /// Refreshing the SDK session token failed (`POST /api/v1/sdk/refresh`).
+  tokenRefresh,
+
+  /// Obtaining the WebSocket ticket failed (`POST /api/v1/sdk/ws-ticket`).
+  wsTicket,
+
+  /// The WebSocket connection failed to open or errored.
+  socketConnection,
+
+  /// The socket opened but the server never sent `session_start` in time.
+  sessionStartTimeout,
+
+  /// Sending a message failed (e.g. not connected).
+  sendFailed,
+
+  /// Fetching persisted history failed.
+  historyFetch,
+
+  /// Any error that does not map to a specific stage.
+  unknown,
+}
+
 abstract class SDKEvent {}
 
 class SDKConnectedEvent extends SDKEvent {
@@ -36,10 +66,17 @@ class SDKErrorEvent extends SDKEvent {
   final Object error;
   final StackTrace? stackTrace;
 
-  SDKErrorEvent(this.error, [this.stackTrace]);
+  /// The stage where the error occurred.
+  final SDKErrorCode code;
+
+  SDKErrorEvent(
+    this.error, {
+    this.stackTrace,
+    this.code = SDKErrorCode.unknown,
+  });
 
   @override
-  String toString() => 'SDKErrorEvent(error: $error)';
+  String toString() => 'SDKErrorEvent(code: ${code.name}, error: $error)';
 }
 
 class SDKIdleTimeoutEvent extends SDKEvent {
