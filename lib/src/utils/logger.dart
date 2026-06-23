@@ -7,14 +7,22 @@ import 'dart:developer' as developer;
 class ArtemisLogger {
   static String _logLevel = 'info';
   static bool _enabled = false;
+  static bool _printToConsole = false;
 
   /// Configure logger
+  ///
+  /// [enabled] turns logging on/off entirely.
+  /// [logLevel] controls the minimum severity that is logged.
+  /// [printToConsole] toggles `print()` output to the console for every
+  /// emitted log, independently of [logLevel].
   static void configure({
     required bool enabled,
     required String logLevel,
+    bool printToConsole = false,
   }) {
     _enabled = enabled;
     _logLevel = logLevel.toLowerCase();
+    _printToConsole = printToConsole;
   }
 
   /// Log debug message
@@ -75,8 +83,8 @@ class ArtemisLogger {
       error: data,
     );
 
-    // Also print to console in debug mode
-    if (_logLevel == 'debug') {
+    // Also print to console when the print flag is enabled
+    if (_printToConsole) {
       // ignore: avoid_print
       print('🔷 ARTEMIS_SDK $logMessage');
       if (data != null) {

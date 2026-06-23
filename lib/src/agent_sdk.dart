@@ -71,6 +71,7 @@ class AgentSDK {
       ArtemisLogger.configure(
         enabled: sdk._config!.debug.enabled,
         logLevel: sdk._config!.debug.logLevel,
+        printToConsole: sdk._config!.debug.printLogs,
       );
 
       ArtemisLogger.info('AgentSDK initialized successfully', {
@@ -96,6 +97,7 @@ class AgentSDK {
     ArtemisLogger.configure(
       enabled: config.debug.enabled,
       logLevel: config.debug.logLevel,
+      printToConsole: config.debug.printLogs,
     );
 
     return sdk;

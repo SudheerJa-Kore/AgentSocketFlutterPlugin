@@ -543,12 +543,14 @@ class DebugConfig {
   final String logLevel;
   final bool logNetworkRequests;
   final bool logWebsocketMessages;
+  final bool printLogs;
 
   const DebugConfig({
     this.enabled = false,
     this.logLevel = 'info',
     this.logNetworkRequests = false,
     this.logWebsocketMessages = false,
+    this.printLogs = false,
   });
 
   factory DebugConfig.fromMap(Map<String, dynamic> map) {
@@ -557,6 +559,7 @@ class DebugConfig {
       logLevel: map['log_level'] ?? 'info',
       logNetworkRequests: map['log_network_requests'] ?? false,
       logWebsocketMessages: map['log_websocket_messages'] ?? false,
+      printLogs: map['print_logs'] ?? false,
     );
   }
 
@@ -566,6 +569,7 @@ class DebugConfig {
       'log_level': logLevel,
       'log_network_requests': logNetworkRequests,
       'log_websocket_messages': logWebsocketMessages,
+      'print_logs': printLogs,
     };
   }
 }

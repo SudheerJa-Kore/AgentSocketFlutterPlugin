@@ -92,10 +92,11 @@ artemis_sdk:
 
   # Logging & Debug
   debug:
-    enabled: true
+    enabled: false
     log_level: "debug"
     log_network_requests: true
     log_websocket_messages: true
+    print_logs: false
 
   # Feature flags
   features:
