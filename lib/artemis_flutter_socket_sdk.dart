@@ -23,6 +23,7 @@ export 'src/config/sdk_configuration_loader.dart';
 
 // Models
 export 'src/models/message.dart';
+export 'src/models/rich_content.dart';
 export 'src/models/widget_config.dart';
 
 // Events

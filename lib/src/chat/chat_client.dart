@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import '../config/sdk_configuration.dart';
 import '../events/chat_events.dart';
 import '../models/message.dart';
+import '../models/rich_content.dart';
 import '../utils/logger.dart';
 import '../core/session_manager.dart';
 import '../transport/transport_types.dart';
@@ -266,7 +267,7 @@ class ChatClient {
 
       case 'response_chunk':
         final chunkMessageId = message.raw['messageId'] as String? ?? '';
-        final chunk = (message.raw['chunk'] as String?) ?? '';
+        final chunk = _readStreamChunk(message);
         if (chunkMessageId.isEmpty || chunk.isEmpty) {
           break;
         }
@@ -298,15 +299,21 @@ class ChatClient {
         final envelopeText = envelope is Map<String, dynamic>
             ? envelope['text'] as String?
             : null;
+        final richContent = _extractRichContent(message.raw);
         final content = (message.raw['fullText'] as String?) ??
             (message.raw['text'] as String?) ??
+            (message.raw['content'] as String?) ??
             envelopeText ??
             _streamingBuffers.remove(endMessageId)?.toString() ??
             '';
 
         _resolveOldestInFlight();
 
-        if (content.trim().isEmpty) {
+        final hasTextContent = content.trim().isNotEmpty;
+        final hasRenderablePayload =
+            hasTextContent || richContent != null;
+
+        if (!hasRenderablePayload) {
           _eventController.add(
             ChatErrorEvent(
               StateError('Received empty assistant response'),
@@ -323,6 +330,7 @@ class ChatClient {
           metadata: message.raw['metadata'] is Map<String, dynamic>
               ? Map<String, dynamic>.from(message.raw['metadata'] as Map)
               : null,
+          richContent: richContent,
         );
 
         _streamingBuffers.remove(endMessageId);
@@ -389,6 +397,32 @@ class ChatClient {
   void _upsertStreamingMessage(Message message) {
     _addMessage(message);
     _eventController.add(MessageReceivedEvent(message));
+  }
+
+  RichContent? _extractRichContent(Map<String, dynamic> raw) {
+    final direct = parseRichContent(raw['richContent']);
+    if (direct != null) {
+      return direct;
+    }
+
+    final envelope = raw['contentEnvelope'];
+    if (envelope is Map<String, dynamic>) {
+      return parseRichContent(envelope['richContent']);
+    }
+
+    return null;
+  }
+
+  String _readStreamChunk(TransportServerMessage message) {
+    final chunk = message.raw['chunk'];
+    if (chunk is String && chunk.isNotEmpty) {
+      return chunk;
+    }
+    final content = message.raw['content'];
+    if (content is String && content.isNotEmpty) {
+      return content;
+    }
+    return '';
   }
 
   String _generateId() {
