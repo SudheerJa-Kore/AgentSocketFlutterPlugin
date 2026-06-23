@@ -1,7 +1,7 @@
-# Artemis SDK Configuration
+# Artemis UI SDK Configuration
 # Example configuration for demo app
 
-artemis_sdk:
+artemis_flutter_ui_sdk:
   # Environment (dev, staging, prod)
   environment: dev
 
@@ -62,7 +62,7 @@ artemis_sdk:
   storage:
     enable_message_cache: true
     enable_offline_queue: true
-    secure_storage_key_prefix: "artemis_sdk_demo"
+    secure_storage_key_prefix: "artemis_flutter_ui_sdk_demo"
     cache_ttl_days: 30
 
   # Performance configuration
@@ -92,11 +92,10 @@ artemis_sdk:
 
   # Logging & Debug
   debug:
-    enabled: false
+    enabled: true
     log_level: "debug"
     log_network_requests: true
     log_websocket_messages: true
-    print_logs: false
 
   # Feature flags
   features:

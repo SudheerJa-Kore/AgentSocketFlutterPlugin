@@ -1,50 +1,122 @@
-# Artemis Flutter SDK
+# Artemis Flutter UI SDK
 
-A production-ready Flutter plugin for integrating Artemis's AI agent capabilities into iOS and Android applications.
+Flutter plugin for embedding AI agent chat in iOS and Android apps. Provides a **built-in chat UI** (status bar, bubbles, markdown, carousel, typing indicator, input) and a **one-line launch API**.
+
+**WebSocket / session / messaging** is delegated to [AgentSocketFlutterPlugin](https://github.com/SudheerJa-Kore/AgentSocketFlutterPlugin) (`artemis_flutter_socket_sdk`). This package adds configuration helpers and the chat UI layer.
+
+| Document | Description |
+|----------|-------------|
+| [HLD.md](./HLD.md) | High-level architecture, context, data flows |
+| [LLD.md](./LLD.md) | Classes, sequences, module map, wire protocol |
+| [example/](./example/) | Minimal host app (one button) |
+
+---
 
 ## Features
 
-- ✅ **Text Chat**: Real-time messaging with AI agents
-- ✅ **Configuration-First**: All settings loaded from YAML configuration
-- ✅ **Event Streaming**: Listen to SDK and chat events
-- ✅ **Message History**: Full conversation management
-- ✅ **Environment Support**: Dev/staging/prod configurations
-- ✅ **Type-Safe**: Strongly typed Dart API
-- ✅ **Platform Native**: Supports iOS and Android
+- **One-button chat** — `AgentChatUI.open(context, …)`
+- **Built-in UI** — status bar, message bubbles, markdown, carousel cards, typing indicator, input, reconnect
+- **Inline or YAML config** — `createDefault()` or `assets/sdk_configurations.yaml`
+- **WebSocket chat** — streaming, history, auto-reconnect (via socket plugin)
+- **Channel support** — optional `channelId` in configuration
+- **Rich content** — horizontal carousel cards with images and external links (`features.enable_carousel`)
+- **iOS & Android** — Flutter 3.3+, Dart 3.12+
+
+---
+
+## Architecture (summary)
+
+```
+Host App (example)
+       │
+       ▼
+artemis_flutter_ui_sdk     ← UI + SDKConfigurationLoader
+       │
+       ▼
+artemis_flutter_socket_sdk       ← AgentSDK, SessionManager, ChatClient
+       │
+       ▼
+Agent Platform Runtime (HTTPS + WSS)
+```
+
+See [HLD.md](./HLD.md) for diagrams and component detail.
+
+---
 
 ## Installation
 
-Add this to your package's `pubspec.yaml`:
-
 ```yaml
+# your_app/pubspec.yaml
 dependencies:
-  artemis_flutter_socket_sdk:
-    path: ../path/to/artemis_flutter_socket_sdk  # or from pub.dev when published
+  artemis_flutter_ui_sdk:
+    path: ../artemis_flutter_ui_sdk
 ```
-
-Then run:
 
 ```bash
 flutter pub get
 ```
 
+> **iOS note:** The plugin folder must be named `artemis_flutter_ui_sdk` (same as the pubspec `name`) for Swift Package Manager. See [LLD §10](./LLD.md#10-build--spm-constraint).
+
+---
+
 ## Quick Start
 
-### 1. Create Configuration File
+### Option A — Inline config (recommended)
 
-Create `assets/sdk_configurations.yaml` in your Flutter app:
+```dart
+import 'package:artemis_flutter_ui_sdk/artemis_flutter_ui_sdk.dart';
+import 'package:flutter/material.dart';
+
+void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  runApp(const MaterialApp(home: HomeScreen()));
+}
+
+class HomeScreen extends StatelessWidget {
+  const HomeScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Center(
+        child: ElevatedButton(
+          onPressed: () => AgentChatUI.open(
+            context,
+            configuration: SDKConfigurationLoader.createDefault(
+              projectId: 'your-project-id',
+              endpoint: 'https://your-runtime.example.com',
+              apiKey: 'pk_your_public_key',
+              channelId: 'your-channel-id', // optional
+            ),
+            title: 'Agent Chat',
+          ),
+          child: const Text('Open Chat'),
+        ),
+      ),
+    );
+  }
+}
+```
+
+The SDK initializes `AgentSDK`, opens the WebSocket, and presents the full chat screen.
+
+### Option B — YAML assets
+
+1. Create `assets/sdk_configurations.yaml`:
 
 ```yaml
-artemis_sdk:
+artemis_flutter_ui_sdk:
   environment: dev
   connection:
     project_id: "your-project-id"
-    api_key: "pk_your_api_key"
-    endpoint: "https://runtime.example.com"
-  # ... see example/assets/sdk_configurations.yaml for all options
+    api_key: "pk_your_public_key"
+    endpoint: "https://your-runtime.example.com"
+  channel:
+    channel_id: "your-channel-id"
 ```
 
-### 2. Add Assets to pubspec.yaml
+2. Register the asset in your app `pubspec.yaml`:
 
 ```yaml
 flutter:
@@ -52,339 +124,136 @@ flutter:
     - assets/sdk_configurations.yaml
 ```
 
-### 3. Initialize SDK
+3. Open chat without inline config:
 
 ```dart
-import 'package:artemis_flutter_socket_sdk/artemis_flutter_socket_sdk.dart';
-
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  
-  // Initialize SDK with configuration from assets
-  final sdk = await AgentSDK.initialize();
-  
-  // Connect to platform
-  await sdk.connect();
-  
-  runApp(MyApp(sdk: sdk));
-}
+AgentChatUI.open(context, title: 'Agent Chat');
 ```
 
-### 4. Use SDK in Your App
+---
 
-```dart
-class ChatScreen extends StatefulWidget {
-  final AgentSDK sdk;
-  
-  const ChatScreen({required this.sdk});
-  
-  @override
-  State<ChatScreen> createState() => _ChatScreenState();
-}
-
-class _ChatScreenState extends State<ChatScreen> {
-  @override
-  void initState() {
-    super.initState();
-    
-    // Listen to chat events
-    widget.sdk.chatEvents.listen((event) {
-      if (event is MessageReceivedEvent) {
-        setState(() {
-          // Update UI with new message
-        });
-      }
-    });
-  }
-  
-  Future<void> _sendMessage(String text) async {
-    await widget.sdk.sendMessage(text);
-  }
-  
-  @override
-  Widget build(BuildContext context) {
-    final messages = widget.sdk.getMessages();
-    // Build your UI with messages
-  }
-}
-```
-
-## Configuration
-
-The SDK uses a YAML configuration file to control all behavior. This makes it easy to switch between environments without code changes.
-
-### Required Fields
-
-```yaml
-artemis_sdk:
-  connection:
-    project_id: "your-project-id"      # REQUIRED
-    api_key: "pk_your_api_key"         # REQUIRED (or bootstrap_token)
-    endpoint: "https://runtime.example.com"  # REQUIRED
-```
-
-### Environment-Specific Overrides
-
-Create environment-specific files that override base configuration:
-
-```
-assets/
-  ├── sdk_configurations.yaml         # Base configuration
-  ├── sdk_configurations.dev.yaml     # Development overrides
-  ├── sdk_configurations.staging.yaml # Staging overrides
-  └── sdk_configurations.prod.yaml    # Production overrides
-```
-
-Load specific environment:
-
-```dart
-final sdk = await AgentSDK.initialize(
-  environment: 'prod',  // Loads sdk_configurations.prod.yaml
-);
-```
-
-### Configuration Sections
-
-| Section | Description |
-|---------|-------------|
-| `connection` | Project ID, API key, endpoint |
-| `websocket` | Reconnection settings, idle disconnect |
-| `voice` | Voice mode, barge-in, sample rate |
-| `chat` | File upload, typing indicators, history |
-| `storage` | Message cache, offline queue |
-| `theme` | Colors, fonts, border radius |
-| `debug` | Logging levels, request logging |
-| `features` | Feature flags for all capabilities |
-| `security` | TLS enforcement, certificate pinning |
-
-See [example/assets/sdk_configurations.yaml](example/assets/sdk_configurations.yaml) for complete configuration.
-
-## API Reference
-
-### AgentSDK
-
-Main SDK entry point.
-
-```dart
-// Initialize
-final sdk = await AgentSDK.initialize();
-
-// Connect
-await sdk.connect();
-
-// Send message
-await sdk.sendMessage('Hello!');
-
-// Get messages
-final messages = sdk.getMessages();
-
-// Clear history
-sdk.clearHistory();
-
-// Check connection
-final isConnected = sdk.isConnected();
-
-// Get session ID
-final sessionId = sdk.getSessionId();
-
-// Disconnect
-sdk.disconnect();
-
-// Dispose
-await sdk.dispose();
-```
-
-### Events
-
-Listen to SDK and chat events:
-
-```dart
-// SDK events
-sdk.events.listen((event) {
-  if (event is SDKConnectedEvent) {
-    print('Connected: ${event.sessionId}');
-  } else if (event is SDKDisconnectedEvent) {
-    print('Disconnected: ${event.reason}');
-  } else if (event is SDKErrorEvent) {
-    print('Error: ${event.error}');
-  }
-});
-
-// Chat events
-sdk.chatEvents.listen((event) {
-  if (event is MessageReceivedEvent) {
-    print('Message: ${event.message.content}');
-  } else if (event is TypingIndicatorEvent) {
-    print('Typing: ${event.isTyping}');
-  }
-});
-```
-
-### Configuration Access
-
-Access loaded configuration:
-
-```dart
-final config = sdk.config;
-
-print('Environment: ${config.environment}');
-print('Endpoint: ${config.connection.endpoint}');
-print('Voice enabled: ${config.features.enableVoice}');
-print('Debug mode: ${config.debug.enabled}');
-```
-
-## Example App
-
-Run the example app to see the SDK in action:
+## Run the Example
 
 ```bash
 cd example
+flutter pub get
 flutter run
 ```
 
-The example demonstrates:
-- SDK initialization and connection
-- Sending and receiving messages
-- Event handling
-- Configuration display
-- UI integration
+The example app shows a single **Connect to Kore AI Agent** button that opens the SDK chat UI with inline configuration.
 
-## Architecture
+---
 
-The SDK follows a three-layer architecture:
+## API Reference
 
-```
-┌─────────────────────────────────────┐
-│  Host Application                    │
-│  ├─ assets/sdk_configurations.yaml  │
-│  └─ main.dart (SDK initialization)  │
-└──────────────┬──────────────────────┘
-               │
-    ┌──────────┴──────────┐
-    │ Artemis Flutter SDK  │
-    │                      │
-    │  Configuration Layer │
-    │  ├─ sdk_configuration.dart
-    │  └─ sdk_configuration_loader.dart
-    │                      │
-    │  Core SDK Layer      │
-    │  ├─ agent_sdk.dart   │
-    │  ├─ models/          │
-    │  ├─ events/          │
-    │  └─ utils/           │
-    │                      │
-    │  Platform Layer      │
-    │  ├─ iOS (Swift)      │
-    │  └─ Android (Kotlin) │
-    └──────────────────────┘
-```
+### `AgentChatUI`
 
-## Development
+| Method | Description |
+|--------|-------------|
+| `AgentChatUI.open(context, {configuration, environment, configAssetPath, runtimeUserContext, title})` | Push full-screen chat; handles init, connect, dispose |
+| `AgentChatUI.demoApp({configuration, title, chatTitle})` | Wrap a minimal demo `MaterialApp` |
 
-### Setup
+### `SDKConfigurationLoader`
 
-```bash
-# Get dependencies
-flutter pub get
+| Method | Description |
+|--------|-------------|
+| `load({environment, customPath})` | Load and validate YAML from assets |
+| `createDefault({projectId, endpoint, apiKey, channelId, channelName})` | Build inline dev configuration |
 
-# Run analysis
-flutter analyze
+### `AgentSDK` (from socket plugin)
 
-# Run tests
-flutter test
+| Method | Description |
+|--------|-------------|
+| `AgentSDK.createWithConfig(config)` | Create SDK with explicit configuration |
+| `connect()` | Bootstrap token, open WebSocket, return session ID |
+| `sendMessage(text)` | Send user message |
+| `getMessages()` | Local conversation history |
+| `isConnected()` / `getSessionId()` | Connection state |
+| `disconnect()` / `dispose()` | Teardown |
 
-# Generate documentation
-dart doc .
+Use `AgentSDK` directly when building a **custom UI** instead of `AgentChatUI`.
+
+### Events
+
+```dart
+sdk.events.listen((event) {
+  if (event is SDKConnectedEvent) { /* connected */ }
+  if (event is SDKDisconnectedEvent) { /* disconnected */ }
+  if (event is SDKReconnectingEvent) { /* reconnecting */ }
+  if (event is SDKErrorEvent) { /* error */ }
+});
+
+sdk.chatEvents.listen((event) {
+  if (event is MessageReceivedEvent) { /* new message */ }
+  if (event is MessageChunkEvent) { /* streaming chunk */ }
+  if (event is TypingIndicatorEvent) { /* typing on/off */ }
+});
 ```
 
-### Adding Features
+Full event list: [LLD.md](./LLD.md) and [AgentSocketFlutterPlugin](https://github.com/SudheerJa-Kore/AgentSocketFlutterPlugin).
 
-1. Add configuration options to `sdk_configuration.dart`
-2. Update `sdk_configuration_loader.dart` validation
-3. Implement feature logic in appropriate module
-4. Add events if needed
-5. Update example app to demonstrate feature
-6. Add tests
+---
 
-### Testing
+## Project Layout
 
-```bash
-# Run all tests
-flutter test
-
-# Run with coverage
-flutter test --coverage
-
-# Run example app tests
-cd example
-flutter test
+```
+artemis_flutter-ui-sdk/
+├── artemis_flutter_ui_sdk/   # Plugin (pubspec name = folder name)
+│   ├── lib/
+│   │   ├── artemis_flutter_ui_sdk.dart
+│   │   └── src/
+│   │       ├── config/sdk_configuration_loader.dart
+│   │       └── ui/               # Chat UI widgets
+│   ├── android/
+│   ├── ios/
+│   └── test/
+├── example/                      # Reference host app
+├── HLD.md
+├── LLD.md
+└── README.md
 ```
 
-## Platform Support
+---
 
-| Platform | Version |
-|----------|---------|
-| iOS | 12.0+ |
-| Android | API 21+ (Android 5.0) |
+## Configuration Sections
+
+| Section | Description |
+|---------|-------------|
+| `connection` | `project_id`, `api_key`, `endpoint` |
+| `channel` | `channel_id`, `channel_name` |
+| `websocket` | Reconnection, idle disconnect |
+| `chat` | History, typing, file upload limits |
+| `theme` | Colors, border radius |
+| `debug` | Logging levels |
+| `features` | `enable_markdown`, `enable_carousel`, voice flags, etc. |
+| `security` | TLS enforcement |
+
+Complete sample: [example/assets/sdk_configurations.yaml](./example/assets/sdk_configurations.yaml)
+
+---
 
 ## Requirements
 
-- Dart SDK: >=3.12.2
-- Flutter: >=3.3.0
+| | Version |
+|---|---------|
+| Dart SDK | >= 3.12.2 |
+| Flutter | >= 3.3.0 |
+| iOS | 13.0+ |
+| Android | API 21+ |
 
-## Documentation
-
-- [CLAUDE.md](CLAUDE.md) - Development guide for AI assistants
-- [example/](example/) - Full working example
-- [API Documentation](https://pub.dev/documentation/artemis_flutter_socket_sdk/latest/) - Generated docs
+---
 
 ## Troubleshooting
 
-### Configuration not loading
+| Issue | Fix |
+|-------|-----|
+| Xcode SPM identity mismatch | Ensure plugin path folder is `artemis_flutter_ui_sdk` — [LLD §10](./LLD.md#10-build--spm-constraint) |
+| Config not loading | Verify asset path in pubspec; YAML root key is `artemis_flutter_ui_sdk` |
+| Connection fails | Check `project_id`, `api_key`, `endpoint`; enable `debug.enabled: true` |
+| Build errors after pull | `flutter clean && flutter pub get` in `example/` |
 
-1. Verify file exists in `assets/` folder
-2. Check it's added to `pubspec.yaml` under `flutter.assets`
-3. Run `flutter clean` and rebuild
-4. Validate YAML syntax
-
-### Connection fails
-
-1. Verify endpoint is reachable
-2. Check project_id and api_key are correct
-3. Enable debug logging: `debug.enabled: true`
-4. Check SDK logs for detailed errors
-
-### Build errors
-
-1. Run `flutter clean`
-2. Run `flutter pub get`
-3. Check Flutter version matches requirements
+---
 
 ## License
 
-[Add your license here]
-
-## Support
-
-For issues and questions:
-- GitHub Issues: [your-repo-url]
-- Documentation: [your-docs-url]
-- Email: [your-email]
-
-## Roadmap
-
-- [ ] Voice interaction support
-- [ ] Rich content rendering
-- [ ] File upload support
-- [ ] Offline message queue
-- [ ] Push notifications
-- [ ] WebRTC audio
-- [ ] Multi-session management
-
-## Contributing
-
-Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details.
-
-## Acknowledgments
-
-Built for the Artemis by [Your Team]
+MIT

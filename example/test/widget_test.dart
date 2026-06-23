@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:artemis_flutter_socket_sdk/artemis_flutter_socket_sdk.dart';
+import 'package:artemis_flutter_ui_sdk/artemis_flutter_ui_sdk.dart';
 
 void main() {
   test('SDK configuration loading test', () async {
