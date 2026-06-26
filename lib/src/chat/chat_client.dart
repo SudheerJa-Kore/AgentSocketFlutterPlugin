@@ -6,7 +6,6 @@ import 'package:http/http.dart' as http;
 import '../config/sdk_configuration.dart';
 import '../events/chat_events.dart';
 import '../models/message.dart';
-import '../models/rich_content.dart';
 import '../utils/logger.dart';
 import '../core/session_manager.dart';
 import '../transport/transport_types.dart';
@@ -109,6 +108,38 @@ class ChatClient {
     _transmit(pending);
 
     return messageId;
+  }
+
+  /// Submit an interactive action back to the agent runtime.
+  void submitAction(
+    String actionId, {
+    String? value,
+    Map<String, String>? formData,
+    String? renderId,
+  }) {
+    if (!_sessionManager.isConnected()) {
+      throw StateError('Not connected to the platform');
+    }
+
+    final trimmedId = actionId.trim();
+    if (trimmedId.isEmpty) {
+      throw ArgumentError.value(actionId, 'actionId', 'must not be empty');
+    }
+
+    _sessionManager.send(
+      ActionSubmitTransport(
+        actionId: trimmedId,
+        value: value,
+        formData: formData,
+        renderId: renderId,
+      ),
+    );
+
+    ArtemisLogger.debug('Submitted action', {
+      'actionId': trimmedId,
+      'has_form_data': formData != null,
+      'has_render_id': renderId != null,
+    });
   }
 
   /// Send (or re-send) a pending message frame over the active session.
@@ -299,7 +330,8 @@ class ChatClient {
         final envelopeText = envelope is Map<String, dynamic>
             ? envelope['text'] as String?
             : null;
-        final richContent = _extractRichContent(message.raw);
+        final rawRichContent = _extractRawRichContent(message.raw);
+        final rawActions = _extractRawActions(message.raw);
         final content = (message.raw['fullText'] as String?) ??
             (message.raw['text'] as String?) ??
             (message.raw['content'] as String?) ??
@@ -311,7 +343,9 @@ class ChatClient {
 
         final hasTextContent = content.trim().isNotEmpty;
         final hasRenderablePayload =
-            hasTextContent || richContent != null;
+            hasTextContent ||
+            _hasRawRichContent(rawRichContent) ||
+            _hasRawActions(rawActions);
 
         if (!hasRenderablePayload) {
           _eventController.add(
@@ -327,10 +361,13 @@ class ChatClient {
           role: MessageRole.assistant,
           content: content,
           timestamp: DateTime.now(),
-          metadata: message.raw['metadata'] is Map<String, dynamic>
-              ? Map<String, dynamic>.from(message.raw['metadata'] as Map)
-              : null,
-          richContent: richContent,
+          metadata: _mergeResponseMetadata(
+            message.raw['metadata'] is Map<String, dynamic>
+                ? Map<String, dynamic>.from(message.raw['metadata'] as Map)
+                : null,
+            rawRichContent,
+            rawActions,
+          ),
         );
 
         _streamingBuffers.remove(endMessageId);
@@ -399,18 +436,88 @@ class ChatClient {
     _eventController.add(MessageReceivedEvent(message));
   }
 
-  RichContent? _extractRichContent(Map<String, dynamic> raw) {
-    final direct = parseRichContent(raw['richContent']);
-    if (direct != null) {
-      return direct;
+  Map<String, dynamic>? _extractRawRichContent(Map<String, dynamic> raw) {
+    final direct = raw['richContent'] ?? raw['rich_content'];
+    if (direct is Map<String, dynamic>) {
+      return Map<String, dynamic>.from(direct);
     }
 
     final envelope = raw['contentEnvelope'];
     if (envelope is Map<String, dynamic>) {
-      return parseRichContent(envelope['richContent']);
+      final nested = envelope['richContent'] ?? envelope['rich_content'];
+      if (nested is Map<String, dynamic>) {
+        return Map<String, dynamic>.from(nested);
+      }
     }
 
     return null;
+  }
+
+  bool _hasRawRichContent(Map<String, dynamic>? rawRichContent) {
+    return rawRichContent != null && rawRichContent.isNotEmpty;
+  }
+
+  Map<String, dynamic>? _extractRawActions(Map<String, dynamic> raw) {
+    final direct = raw['actions'];
+    if (direct is Map<String, dynamic>) {
+      return Map<String, dynamic>.from(direct);
+    }
+
+    final envelope = raw['contentEnvelope'];
+    if (envelope is Map<String, dynamic>) {
+      final nested = envelope['actions'];
+      if (nested is Map<String, dynamic>) {
+        return Map<String, dynamic>.from(nested);
+      }
+    }
+
+    return null;
+  }
+
+  bool _hasRawActions(Map<String, dynamic>? rawActions) {
+    if (rawActions == null || rawActions.isEmpty) {
+      return false;
+    }
+    final elements = rawActions['elements'];
+    return elements is List && elements.isNotEmpty;
+  }
+
+  Map<String, dynamic>? _mergeResponseMetadata(
+    Map<String, dynamic>? metadata,
+    Map<String, dynamic>? rawRichContent,
+    Map<String, dynamic>? rawActions,
+  ) {
+    var merged = metadata;
+
+    if (rawRichContent != null && rawRichContent.isNotEmpty) {
+      merged = {
+        ...?merged,
+        'richContent': rawRichContent,
+      };
+    }
+
+    if (_hasRawActions(rawActions)) {
+      merged = {
+        ...?merged,
+        'actions': rawActions,
+      };
+    }
+
+    return merged;
+  }
+
+  Map<String, dynamic>? _mergeRichContentMetadata(
+    Map<String, dynamic>? metadata,
+    Map<String, dynamic>? rawRichContent,
+  ) {
+    if (rawRichContent == null || rawRichContent.isEmpty) {
+      return metadata;
+    }
+
+    return {
+      ...?metadata,
+      'richContent': rawRichContent,
+    };
   }
 
   String _readStreamChunk(TransportServerMessage message) {
@@ -542,9 +649,12 @@ class ChatClient {
       role: _roleFromString(role),
       content: content,
       timestamp: timestamp,
-      metadata: raw['metadata'] is Map<String, dynamic>
-          ? Map<String, dynamic>.from(raw['metadata'] as Map)
-          : null,
+      metadata: _mergeRichContentMetadata(
+        raw['metadata'] is Map<String, dynamic>
+            ? Map<String, dynamic>.from(raw['metadata'] as Map)
+            : null,
+        _extractRawRichContent(raw),
+      ),
     );
   }
 

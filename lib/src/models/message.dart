@@ -3,8 +3,6 @@
 /// Represents a message in a chat conversation with the AI agent.
 library;
 
-import 'rich_content.dart';
-
 enum MessageRole {
   user,
   assistant,
@@ -20,7 +18,6 @@ class Message {
   final DateTime timestamp;
   final Map<String, dynamic>? metadata;
   final List<String>? attachmentIds;
-  final RichContent? richContent;
 
   const Message({
     required this.id,
@@ -29,7 +26,6 @@ class Message {
     required this.timestamp,
     this.metadata,
     this.attachmentIds,
-    this.richContent,
   });
 
   factory Message.fromJson(Map<String, dynamic> json) {
@@ -38,15 +34,12 @@ class Message {
       role: _roleFromString(json['role'] as String),
       content: json['content'] as String,
       timestamp: DateTime.parse(json['timestamp'] as String),
-      metadata: json['metadata'] as Map<String, dynamic>?,
+      metadata: json['metadata'] is Map<String, dynamic>
+          ? Map<String, dynamic>.from(json['metadata'] as Map)
+          : null,
       attachmentIds: (json['attachment_ids'] as List<dynamic>?)
           ?.map((e) => e as String)
           .toList(),
-      richContent: json['rich_content'] is Map<String, dynamic>
-          ? parseRichContent(json['rich_content'])
-          : json['richContent'] is Map<String, dynamic>
-              ? parseRichContent(json['richContent'])
-              : null,
     );
   }
 
@@ -58,7 +51,6 @@ class Message {
       'timestamp': timestamp.toIso8601String(),
       if (metadata != null) 'metadata': metadata,
       if (attachmentIds != null) 'attachment_ids': attachmentIds,
-      if (richContent != null) 'richContent': richContent!.toJson(),
     };
   }
 
@@ -97,7 +89,6 @@ class Message {
     DateTime? timestamp,
     Map<String, dynamic>? metadata,
     List<String>? attachmentIds,
-    RichContent? richContent,
   }) {
     return Message(
       id: id ?? this.id,
@@ -106,7 +97,6 @@ class Message {
       timestamp: timestamp ?? this.timestamp,
       metadata: metadata ?? this.metadata,
       attachmentIds: attachmentIds ?? this.attachmentIds,
-      richContent: richContent ?? this.richContent,
     );
   }
 

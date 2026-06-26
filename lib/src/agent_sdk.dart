@@ -257,6 +257,38 @@ class AgentSDK {
     }
   }
 
+  /// Submit an interactive action (button click, select change, form submit).
+  Future<void> submitAction(
+    String actionId, {
+    String? value,
+    Map<String, String>? formData,
+    String? renderId,
+  }) async {
+    _ensureInitialized();
+
+    if (!isConnected()) {
+      final error = StateError('SDK not connected. Call connect() first.');
+      _eventController.add(
+        SDKErrorEvent(error, code: SDKErrorCode.sendFailed),
+      );
+      throw error;
+    }
+
+    try {
+      _chatClient!.submitAction(
+        actionId,
+        value: value,
+        formData: formData,
+        renderId: renderId,
+      );
+    } catch (e, st) {
+      _eventController.add(
+        SDKErrorEvent(e, stackTrace: st, code: SDKErrorCode.sendFailed),
+      );
+      rethrow;
+    }
+  }
+
   /// Get all messages
   List<Message> getMessages() => _chatClient?.getMessages() ?? const [];
 

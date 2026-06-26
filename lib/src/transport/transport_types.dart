@@ -48,6 +48,31 @@ class EndSessionTransport extends TransportClientMessage {
   }
 }
 
+class ActionSubmitTransport extends TransportClientMessage {
+  final String actionId;
+  final String? value;
+  final Map<String, String>? formData;
+  final String? renderId;
+
+  ActionSubmitTransport({
+    required this.actionId,
+    this.value,
+    this.formData,
+    this.renderId,
+  });
+
+  @override
+  Map<String, dynamic> toJson() {
+    return {
+      'type': 'action_submit',
+      'actionId': actionId,
+      if (value != null) 'value': value,
+      if (formData != null) 'formData': formData,
+      if (renderId != null) 'renderId': renderId,
+    };
+  }
+}
+
 /// Server messages received from the WebSocket transport.
 class TransportServerMessage {
   final String type;
