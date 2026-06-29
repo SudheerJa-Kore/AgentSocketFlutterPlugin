@@ -16,6 +16,7 @@ import 'artemis_flutter_socket_sdk_platform_interface.dart';
 
 // Core SDK
 export 'src/agent_sdk.dart';
+export 'src/chat/chat_client.dart' show FeedbackSubmitException;
 
 // Configuration
 export 'src/config/sdk_configuration.dart';
@@ -28,6 +29,9 @@ export 'src/models/widget_config.dart';
 // Events
 export 'src/events/sdk_events.dart';
 export 'src/events/chat_events.dart';
+
+// Transport
+export 'src/transport/transport_types.dart';
 
 // Utils
 export 'src/utils/logger.dart';

@@ -73,6 +73,34 @@ class ActionSubmitTransport extends TransportClientMessage {
   }
 }
 
+class FeedbackSubmitTransport extends TransportClientMessage {
+  final String messageId;
+  final String ratingType;
+  final int ratingValue;
+  final String? feedbackText;
+  final String? actionRenderId;
+
+  FeedbackSubmitTransport({
+    required this.messageId,
+    required this.ratingType,
+    required this.ratingValue,
+    this.feedbackText,
+    this.actionRenderId,
+  });
+
+  @override
+  Map<String, dynamic> toJson() {
+    return {
+      'type': 'feedback.submit',
+      'messageId': messageId,
+      'ratingType': ratingType,
+      'ratingValue': ratingValue,
+      if (feedbackText != null) 'feedbackText': feedbackText,
+      if (actionRenderId != null) 'actionRenderId': actionRenderId,
+    };
+  }
+}
+
 /// Server messages received from the WebSocket transport.
 class TransportServerMessage {
   final String type;

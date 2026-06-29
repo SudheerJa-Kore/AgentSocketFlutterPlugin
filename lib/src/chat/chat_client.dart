@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../config/sdk_configuration.dart';
@@ -36,6 +37,8 @@ class ChatClient {
   /// (`response_end` or `error`). If the socket drops mid-turn, the entries
   /// survive and are retransmitted on the next (re)connect via [resendPending].
   final List<_PendingMessage> _inFlight = [];
+
+  final Map<String, _PendingFeedback> _pendingFeedback = {};
 
   /// Invoked when persisted-history hydration fails. Lets the SDK surface a
   /// coded error event instead of silently swallowing the failure.
@@ -140,6 +143,124 @@ class ChatClient {
       'has_form_data': formData != null,
       'has_render_id': renderId != null,
     });
+    debugPrint('Submitted action: ${jsonEncode(ActionSubmitTransport(
+        actionId: trimmedId,
+        value: value,
+        formData: formData,
+        renderId: renderId,
+      ).toJson())}');
+  }
+
+  /// Submit feedback (thumbs / star / text) on a persisted assistant message.
+  ///
+  /// Sends [FeedbackSubmitTransport] and resolves when the runtime acks with
+  /// `feedback.ack { success: true, feedbackId }`.
+  Future<String> submitFeedback({
+    required String messageId,
+    required String ratingType,
+    required int ratingValue,
+    String? feedbackText,
+    String? actionRenderId,
+    Duration timeout = const Duration(seconds: 10),
+  }) {
+    if (!_sessionManager.isConnected()) {
+      throw StateError('Not connected to the platform');
+    }
+
+    final trimmedMessageId = messageId.trim();
+    if (trimmedMessageId.isEmpty) {
+      throw ArgumentError.value(messageId, 'messageId', 'must not be empty');
+    }
+
+    final key = _feedbackKey(trimmedMessageId, actionRenderId);
+    if (_pendingFeedback.containsKey(key)) {
+      throw StateError('Feedback already pending for this message');
+    }
+
+    final transport = FeedbackSubmitTransport(
+      messageId: trimmedMessageId,
+      ratingType: ratingType,
+      ratingValue: ratingValue,
+      feedbackText: feedbackText,
+      actionRenderId: actionRenderId,
+    );
+
+    if (kDebugMode) {
+      debugPrint(
+        'Submitted feedback: ${jsonEncode(transport.toJson())}',
+      );
+    }
+
+    final completer = Completer<String>();
+    final timer = Timer(timeout, () {
+      final pending = _pendingFeedback.remove(key);
+      if (pending == null || pending.completer.isCompleted) {
+        return;
+      }
+      pending.completer.completeError(
+        TimeoutException(
+          'Feedback ack timed out after ${timeout.inMilliseconds}ms',
+        ),
+      );
+    });
+
+    _pendingFeedback[key] = _PendingFeedback(
+      completer: completer,
+      timer: timer,
+    );
+
+    try {
+      _sessionManager.send(transport);
+    } catch (error, stackTrace) {
+      timer.cancel();
+      _pendingFeedback.remove(key);
+      completer.completeError(error, stackTrace);
+    }
+
+    ArtemisLogger.debug('Submitted feedback', {
+      'messageId': trimmedMessageId,
+      'ratingType': ratingType,
+      'ratingValue': ratingValue,
+      'has_feedback_text': feedbackText != null,
+      'has_action_render_id': actionRenderId != null,
+    });
+
+    return completer.future;
+  }
+
+  String _feedbackKey(String messageId, String? actionRenderId) =>
+      '$messageId|${actionRenderId ?? ''}';
+
+  void _handleFeedbackAck(Map<String, dynamic> raw) {
+    final messageId = raw['messageId'] as String? ?? '';
+    if (messageId.isEmpty) {
+      return;
+    }
+
+    final actionRenderId = raw['actionRenderId'] as String?;
+    final key = _feedbackKey(messageId, actionRenderId);
+    final pending = _pendingFeedback.remove(key);
+    pending?.timer.cancel();
+
+    final success = raw['success'] == true;
+    final feedbackId = raw['feedbackId'] as String?;
+
+    if (pending != null && !pending.completer.isCompleted) {
+      if (success && feedbackId != null && feedbackId.isNotEmpty) {
+        pending.completer.complete(feedbackId);
+      } else {
+        final errorRaw = raw['error'];
+        final code = errorRaw is Map<String, dynamic>
+            ? errorRaw['code'] as String? ?? 'FEEDBACK_REJECTED'
+            : 'FEEDBACK_REJECTED';
+        final message = errorRaw is Map<String, dynamic>
+            ? errorRaw['message'] as String? ?? 'Feedback rejected'
+            : 'Feedback rejected';
+        pending.completer.completeError(
+          FeedbackSubmitException(code: code, message: message),
+        );
+      }
+    }
   }
 
   /// Send (or re-send) a pending message frame over the active session.
@@ -160,6 +281,15 @@ class ChatClient {
       'content': pending.text,
       'has_custom_data': pending.customData != null,
     });
+
+    debugPrint('Submitted message: ${jsonEncode(ChatMessageTransport(
+        text: pending.text,
+        messageId: pending.messageId,
+        sessionId: _sessionManager.getSessionId(),
+        attachmentIds: pending.attachmentIds,
+        metadata: pending.metadata,
+        customData: pending.customData,
+      ).toJson())}');
   }
 
   /// Retransmit any user messages that were left unanswered when the socket
@@ -405,6 +535,10 @@ class ChatClient {
         if (_config.chat.enableTypingIndicator) {
           _eventController.add(TypingIndicatorEvent(false));
         }
+        break;
+
+      case 'feedback.ack':
+        _handleFeedbackAck(message.raw);
         break;
     }
   }
@@ -751,4 +885,28 @@ class _PendingMessage {
     this.metadata,
     this.customData,
   });
+}
+
+class _PendingFeedback {
+  final Completer<String> completer;
+  final Timer timer;
+
+  const _PendingFeedback({
+    required this.completer,
+    required this.timer,
+  });
+}
+
+/// Raised when the runtime rejects a [ChatClient.submitFeedback] request.
+class FeedbackSubmitException implements Exception {
+  final String code;
+  final String message;
+
+  const FeedbackSubmitException({
+    required this.code,
+    required this.message,
+  });
+
+  @override
+  String toString() => 'FeedbackSubmitException($code): $message';
 }

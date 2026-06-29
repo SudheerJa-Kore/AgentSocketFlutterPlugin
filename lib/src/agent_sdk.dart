@@ -289,6 +289,42 @@ class AgentSDK {
     }
   }
 
+  /// Submit feedback on a persisted assistant message via `feedback.submit`.
+  Future<String> submitFeedback({
+    required String messageId,
+    required String ratingType,
+    required int ratingValue,
+    String? feedbackText,
+    String? actionRenderId,
+    Duration timeout = const Duration(seconds: 10),
+  }) async {
+    _ensureInitialized();
+
+    if (!isConnected()) {
+      final error = StateError('SDK not connected. Call connect() first.');
+      _eventController.add(
+        SDKErrorEvent(error, code: SDKErrorCode.sendFailed),
+      );
+      throw error;
+    }
+
+    try {
+      return await _chatClient!.submitFeedback(
+        messageId: messageId,
+        ratingType: ratingType,
+        ratingValue: ratingValue,
+        feedbackText: feedbackText,
+        actionRenderId: actionRenderId,
+        timeout: timeout,
+      );
+    } catch (e, st) {
+      _eventController.add(
+        SDKErrorEvent(e, stackTrace: st, code: SDKErrorCode.sendFailed),
+      );
+      rethrow;
+    }
+  }
+
   /// Get all messages
   List<Message> getMessages() => _chatClient?.getMessages() ?? const [];
 
